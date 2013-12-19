@@ -1,0 +1,118 @@
+<project name="GwtBootstrap3 Release Helper" default="release">
+
+    <!-- Helper Ant script to perform a release of GwtBootstrap3.
+
+         Everything needs to be set up as described here:
+         https://docs.sonatype.org/display/Repository/Sonatype+OSS+Maven+Repository+Usage+Guide
+
+         This script assumes that it's executed in a directory where gwtbootstrap3 is checked out to a directory named
+         "gwtbootstrap3" and gwtbootstrap3-extras is checked out to "gwtbootstrap3-extras".
+
+         In order for the script to work the GPG passphrase of your key for release signing needs to be specified in
+         Maven's ~/.m2/settings.xml because it cannot be entered interactively when Maven is executed by Ant nor can
+         it be specified by command line arguments. That's an issue of Maven's release plugin.
+
+         <settings>
+             <profiles>
+                 <profile>
+                     <id>gpg</id>
+                     <properties>
+                         <gpg.passphrase>mypassphrase</gpg.passphrase>
+                     </properties>
+                 </profile>
+             </profiles>
+             <activeProfiles>
+                 <activeProfile>gpg</activeProfile>
+             </activeProfiles>
+         </settings>
+    -->
+
+    <property name="dir" location="${user.dir}"/>
+    <property name="mvn.bin" value="mvn.bat"/>
+    <property name="git.bin" value="git"/>
+    <property name="dryRun" value="false"/>
+
+    <target name="release">
+        <echo message="Current working directory: ${dir}"/>
+
+        <input addproperty="release.version" message="What is the release version?"/>
+        <input addproperty="development.version" message="What is the next development version (without -SNAPSHOT appended)?"/>
+
+        <echo message="Release version: ${release.version}, Development version: ${development.version}"/>
+        <input addproperty="correct" message="Is this correct (y/n)?"/>
+
+        <condition property="abort">
+            <not><equals arg1="${correct}" arg2="y" casesensitive="false" trim="true"/></not>
+        </condition>
+
+        <fail if="abort">Release aborted by user</fail>
+
+        <antcall target="do-release">
+            <param name="dir" value="${dir}/gwtbootstrap3"/>
+        </antcall>
+
+        <!-- Update gwtbootstrap-extras parent version to release -->
+        <exec executable="${mvn.bin}"
+              dir="${dir}/gwtbootstrap3-extras"
+              failonerror="true">
+            <arg value="versions:update-parent"/>
+            <arg value="-DparentVersion=${release.version}"/>
+        </exec>
+
+        <!-- Update gwtbootstrap-extras dependency to release -->
+        <exec executable="${mvn.bin}"
+              dir="${dir}/gwtbootstrap3-extras"
+              failonerror="true">
+            <arg value="versions:use-next-versions"/>
+        </exec>
+
+        <exec executable="${git.bin}"
+              dir="${dir}/gwtbootstrap3-extras"
+              failonerror="true">
+            <arg value="add"/>
+            <arg value="pom.xml"/>
+        </exec>
+
+        <exec executable="${git.bin}"
+              dir="${dir}/gwtbootstrap3-extras"
+              failonerror="true">
+            <arg value="commit"/>
+            <arg value="-m"/>
+            <arg value="Prepare release ${release.version}"/>
+        </exec>
+
+        <antcall target="do-release">
+            <param name="dir" value="${dir}/gwtbootstrap3-extras"/>
+        </antcall>
+
+        <echo message="${line.separator}${line.separator}Done! Now don't forget to login to https://oss.sonatype.org/ and release the staged artifacts."/>
+    </target>
+
+    <target name="do-release">
+
+        <exec executable="${mvn.bin}"
+              dir="${dir}"
+              failonerror="true">
+            <arg value="release:clean"/>
+        </exec>
+
+        <exec executable="${mvn.bin}"
+              dir="${dir}"
+              failonerror="true">
+            <arg value="release:prepare"/>
+            <arg value="-DreleaseVersion=${release.version}"/>
+            <arg value="-DdevelopmentVersion=${development.version}"/>
+            <arg value="-Dtag=${release.version}"/>
+            <arg value="-DdryRun=${dryRun}"/>
+        </exec>
+
+        <exec executable="${mvn.bin}"
+              dir="${dir}"
+              failonerror="true">
+            <arg value="release:perform"/>
+            <arg value="-DdryRun=${dryRun}"/>
+        </exec>
+
+    </target>
+
+</project>
